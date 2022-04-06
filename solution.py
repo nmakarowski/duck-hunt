@@ -1,9 +1,11 @@
 import time
-from detecto import core, utils, visualize
+#from detecto import core, utils, visualize
 import numpy as np
-import torch
-from numba import jit, cuda
 import tensorflow as tf
+from detecto import core
+import torch
+import torchvision.models as models
+import cv2
 
 """
 Replace following with your own algorithm logic
@@ -13,9 +15,20 @@ Manual mode where you can use your mouse as also been added for testing purposes
 """
 coords = []
 thresh = 0.6
-model = core.Model.load('model_weights.pth', ['DUCK'])
+device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+print(f"Device: {device}")
+num_classes = 1
+detecto_model = core.Model.load('model_weights.pth', ['DUCK'])
+model = detecto_model.get_internal_model()
+model.eval()
+model.to(device)
+
+#indexer = 0
+
+COLORS = np.random.uniform(0, 255, size=(2, 3))
 
 def GetLocation(move_type, env, current_frame):
+    #global indexer
     #time.sleep(1) #artificial one second processing time
     
     #Use relative coordinates to the current position of the "gun", defined as an integer below
@@ -39,33 +52,25 @@ def GetLocation(move_type, env, current_frame):
         Upper left = (0,0)
         Bottom right = (W, H) 
         """
-        print("RUNNING MODEL")
+     
+        img = current_frame.copy()
+        img = preprocess(img)
+        img = img.to(device)
+        print("Beginning detection")
 
-        """pred = model.predict(current_frame)
-        labels, boxes, scores = pred
+        detections = model(img)[0]
 
-        filtered_idx = np.where(scores > thresh)
-        max_idx = np.argmax(scores)
-        filtered_scores=scores[filtered_idx]
-        filtered_boxes=boxes[filtered_idx]
-        num_list = filtered_idx[0].tolist()
-        filtered_labels = [labels[i] for i in num_list]
+        print("Finished detection")
+        #save_detection(detections, current_frame, f'detections/{indexer}.jpg')
+        #indexer+=1
+        print("Detection complete")
 
-        for box in filtered_boxes:
-            x, y = centerOfBox(box)
-            coords.append(np.array([x,y]))
+        idx_max = np.argmax(detections['scores'].detach().cpu().numpy())
 
-        #visualize.show_labeled_image(current_frame, filtered_boxes, filtered_labels)
+        box = detections["boxes"][idx_max].detach().cpu().numpy()
+        coordinate = centerOfBox(box)
 
-        coordinate = coords.pop(0)"""
-        with tf.device('/device:GPU:0'):
-            labels, boxes, scores  = model.predict_top(current_frame)
-            x, y = centerOfBox(boxes[0])
 
-            coordinate = env.action_space_abs.sample()
-        
-            coordinate[0] = x
-            coordinate[1] = y
 
     return [{'coordinate' : coordinate, 'move_type' : move_type}]
 
@@ -76,4 +81,45 @@ def centerOfBox(box):
     y = (box[2] + box[0]) / 2
     x = (box[3] + box[1]) / 2
 
-    return x, y
+    return np.array([x, y])
+
+#https://pyimagesearch.com/2021/08/02/pytorch-object-detection-with-pre-trained-networks/
+def preprocess(image):
+    #image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = image.transpose((2, 0, 1))
+    # add the batch dimension, scale the raw pixel intensities to the
+    # range [0, 1], and convert the image to a floating point tensor
+    image = np.expand_dims(image, axis=0)
+    image = image / 255.0
+    image = torch.FloatTensor(image)
+    # send the input to the device and pass the it through the network to
+    # get the detections and predictions
+    return image
+
+
+
+def save_detection(detections, orig, fname):
+    for i in range(0, len(detections["boxes"])):
+        # extract the confidence (i.e., probability) associated with the
+        # prediction
+        confidence = detections["scores"][i]
+        # filter out weak detections by ensuring the confidence is
+        # greater than the minimum confidence
+        if confidence > thresh:
+            # extract the index of the class label from the detections,
+            # then compute the (x, y)-coordinates of the bounding box
+            # for the object
+            idx = int(detections["labels"][i])
+            box = detections["boxes"][i].detach().cpu().numpy()
+            (startX, startY, endX, endY) = box.astype("int")
+            # display the prediction to our terminal
+            label = "{}: {:.2f}%".format('Duck', confidence * 100)
+            print("[INFO] {}".format(label))
+            # draw the bounding box and label on the image
+            cv2.rectangle(orig, (startX, startY), (endX, endY),
+                COLORS[idx], 2)
+            y = startY - 15 if startY - 15 > 15 else startY + 15
+            cv2.putText(orig, label, (startX, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx], 2)
+    
+    #cv2.imwrite(fname, orig)
