@@ -2,7 +2,7 @@ import time
 #from detecto import core, utils, visualize
 import numpy as np
 import tensorflow as tf
-from detecto import core
+from detecto import core, utils
 import torch
 import torchvision.models as models
 import cv2
@@ -14,21 +14,22 @@ Two random coordinate generator has been provided for testing purposes.
 Manual mode where you can use your mouse as also been added for testing purposes.
 """
 coords = []
-thresh = 0.6
+thresh = 0.2
 device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
 print(f"Device: {device}")
-num_classes = 1
-detecto_model = core.Model.load('model_weights.pth', ['DUCK'])
-model = detecto_model.get_internal_model()
+num_classes = 2
+
+model = models.detection.fasterrcnn_mobilenet_v3_large_fpn(pretrained_backbone=False, num_classes=num_classes)
+model.load_state_dict(torch.load('model_weights.pth', map_location=device))
 model.eval()
 model.to(device)
 
-#indexer = 0
+indexer = 0
 
 COLORS = np.random.uniform(0, 255, size=(2, 3))
 
 def GetLocation(move_type, env, current_frame):
-    #global indexer
+    global indexer
     #time.sleep(1) #artificial one second processing time
     
     #Use relative coordinates to the current position of the "gun", defined as an integer below
@@ -52,27 +53,33 @@ def GetLocation(move_type, env, current_frame):
         Upper left = (0,0)
         Bottom right = (W, H) 
         """
-     
+        #img = utils.read_image()
         img = current_frame.copy()
         img = preprocess(img)
         img = img.to(device)
         print("Beginning detection")
 
+        returns = []
+
         detections = model(img)[0]
 
         print("Finished detection")
-        #save_detection(detections, current_frame, f'detections/{indexer}.jpg')
-        #indexer+=1
+
+        fileName = f'detections/{indexer}.jpg'
+        indexer+=1
+        save_detection(detections, current_frame, None)
+        
+
+        idx_scores = np.where(detections['scores'].detach().cpu().numpy() > thresh)
+
+        boxes = detections["boxes"][idx_scores].detach().cpu().numpy()
+        for box in boxes:
+            x, y = centerOfBox(box)
+            returns.append({'coordinate' : [x,y], 'move_type' : move_type})
+
         print("Detection complete")
 
-        idx_max = np.argmax(detections['scores'].detach().cpu().numpy())
-
-        box = detections["boxes"][idx_max].detach().cpu().numpy()
-        coordinate = centerOfBox(box)
-
-
-
-    return [{'coordinate' : coordinate, 'move_type' : move_type}]
+    return returns
 
 
 def centerOfBox(box):
@@ -81,7 +88,7 @@ def centerOfBox(box):
     y = (box[2] + box[0]) / 2
     x = (box[3] + box[1]) / 2
 
-    return np.array([x, y])
+    return x, y
 
 #https://pyimagesearch.com/2021/08/02/pytorch-object-detection-with-pre-trained-networks/
 def preprocess(image):
@@ -98,7 +105,7 @@ def preprocess(image):
 
 
 
-def save_detection(detections, orig, fname):
+def save_detection(detections, orig, fname = None):
     for i in range(0, len(detections["boxes"])):
         # extract the confidence (i.e., probability) associated with the
         # prediction
@@ -122,4 +129,5 @@ def save_detection(detections, orig, fname):
             cv2.putText(orig, label, (startX, y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx], 2)
     
-    #cv2.imwrite(fname, orig)
+    if fname is not None:
+        cv2.imwrite(fname, orig)
