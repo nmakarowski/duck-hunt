@@ -1,4 +1,4 @@
-import time
+import os
 #from detecto import core, utils, visualize
 import numpy as np
 import tensorflow as tf
@@ -19,7 +19,7 @@ device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cp
 print(f"Device: {device}")
 num_classes = 2
 
-model = models.detection.fasterrcnn_mobilenet_v3_large_fpn(pretrained_backbone=False, num_classes=num_classes)
+model = models.detection.fasterrcnn_mobilenet_v3_large_fpn(pretrained = False, pretrained_backbone=False, num_classes=num_classes)
 model.load_state_dict(torch.load('model_weights.pth', map_location=device))
 model.eval()
 model.to(device)
@@ -57,7 +57,7 @@ def GetLocation(move_type, env, current_frame):
         img = current_frame.copy()
         img = preprocess(img)
         img = img.to(device)
-        print("Beginning detection")
+        #print("Beginning detection")
 
         returns = []
 
@@ -67,6 +67,7 @@ def GetLocation(move_type, env, current_frame):
 
         fileName = f'detections/{indexer}.jpg'
         indexer+=1
+        #Change Last Parameter to fileName if wanting to save images
         save_detection(detections, current_frame, None)
         
 
@@ -77,7 +78,7 @@ def GetLocation(move_type, env, current_frame):
             x, y = centerOfBox(box)
             returns.append({'coordinate' : [x,y], 'move_type' : move_type})
 
-        print("Detection complete")
+        #print("Detection complete")
 
     return returns
 
@@ -92,7 +93,7 @@ def centerOfBox(box):
 
 #https://pyimagesearch.com/2021/08/02/pytorch-object-detection-with-pre-trained-networks/
 def preprocess(image):
-    #image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image = image.transpose((2, 0, 1))
     # add the batch dimension, scale the raw pixel intensities to the
     # range [0, 1], and convert the image to a floating point tensor
@@ -121,7 +122,7 @@ def save_detection(detections, orig, fname = None):
             (startX, startY, endX, endY) = box.astype("int")
             # display the prediction to our terminal
             label = "{}: {:.2f}%".format('Duck', confidence * 100)
-            print("[INFO] {}".format(label))
+            #print("[INFO] {}".format(label))
             # draw the bounding box and label on the image
             cv2.rectangle(orig, (startX, startY), (endX, endY),
                 COLORS[idx], 2)
@@ -130,4 +131,6 @@ def save_detection(detections, orig, fname = None):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLORS[idx], 2)
     
     if fname is not None:
+        if os.path.exists('detections/'):
+            os.mkdir('detections')
         cv2.imwrite(fname, orig)

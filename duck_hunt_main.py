@@ -26,6 +26,9 @@ def main(args):
     result = {}
     future = None
     executor = ThreadPoolExecutor(max_workers=1)
+
+    level_done = False
+    game_done = False
     while True:
         """ 
         Use the `current_frame` from either env.step of env.render
@@ -51,6 +54,10 @@ def main(args):
             #manual mode
             result = [{"coordinate" : pygame.mouse.get_pos(), 'move_type' : "absolute"}]
         else:
+            #Use commented section to run algorithm without threading and comment out bottom section!
+            """result = GetLocation(args.move_type, env, current_frame)
+            if result == []: 
+                result = noop()"""
             if future is None:
                 result = noop()
                 future = executor.submit(GetLocation, args.move_type, env, current_frame)
@@ -72,6 +79,7 @@ def main(args):
             coordinate  = res['coordinate']
             move_type   = res['move_type']
             current_frame, level_done, game_done, info = env.step(coordinate, move_type)
+            print(info)
             if level_done or game_done:
                 break
 
